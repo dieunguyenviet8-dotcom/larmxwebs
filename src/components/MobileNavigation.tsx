@@ -1,0 +1,3 @@
+import { Compass, Heart, Home, Library } from 'lucide-react';
+const items = [{ icon: Home, label: 'Trang chủ', id: 'home' }, { icon: Compass, label: 'Khám phá', id: 'discover' }, { icon: Library, label: 'Thư viện', id: 'library' }, { icon: Heart, label: 'Yêu thích', id: 'favorites' }];
+export function MobileNavigation({ activeView, onNavigate }: { activeView: string; onNavigate: (view: string) => void }) { return <nav className="mobile-nav glass">{items.map(({ icon: Icon, label, id }) => <button className={activeView === id ? 'active' : ''} onClick={() => onNavigate(id)} key={id}><Icon /><span>{label}</span></button>)}</nav>; }
