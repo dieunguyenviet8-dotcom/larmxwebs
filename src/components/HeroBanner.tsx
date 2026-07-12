@@ -8,7 +8,7 @@ export function HeroBanner({ song }: { song?: Song }) {
   return <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55 }} className={`hero hero-upgraded glass ${song ? 'has-featured-song' : ''}`}>
     <div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" />
     <div className="hero-copy">
-      <span className="eyebrow"><Sparkles /> {song ? 'VỪA CẬP NHẬT TRÊN LARMX' : 'LARMX MUSIC 2026'}</span>
+      <span className="eyebrow"><Sparkles /> {song ? 'NHẠC CẬP NHẬT TỪ LARMX' : 'LARMX MUSIC 2026'}</span>
       <h2>{song ? song.title : <>Liquid<br /><i>Soul</i></>}</h2>
       <p className="artist">{song?.artist || 'Luna Vale'} <Check /></p>
       <p>{song ? `${song.album} · ${song.genre}` : 'Đắm mình trong một thế giới nơi từng nhịp đập hóa thành ánh sáng.'}</p>
