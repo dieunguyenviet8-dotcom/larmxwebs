@@ -5,6 +5,7 @@ import { usePlayer } from '../context/PlayerContext';
 import { formatTime } from '../utils/time';
 import { Controls } from './Controls';
 import { VibePanel } from './VibePanel';
+import { SmoothRange } from './SmoothRange';
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -40,10 +41,10 @@ export function FullscreenPlayer({ open, onClose }: { open: boolean; onClose: ()
 
         <motion.section className="full-controls glass" initial={{ opacity: 0, x: 70 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 85, scale: .96 }} transition={{ duration: .52, delay: .16, ease }}>
           <div className="full-title"><div><small>ĐANG PHÁT</small><AnimatePresence mode="wait"><motion.div key={player.current.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: .3 }}><h1>{player.current.title}</h1><p>{player.current.artist}</p></motion.div></AnimatePresence></div><motion.button whileHover={{ scale: 1.12 }} whileTap={{ scale: .8 }} aria-label="Yêu thích" onClick={() => player.toggleFavorite(player.current.id)}><Heart fill={player.favorites.includes(player.current.id) ? 'currentColor' : 'none'} /></motion.button></div>
-          <input className="range" type="range" min="0" max={player.duration || 1} value={player.time} onChange={event => player.seek(+event.target.value)} aria-label="Tiến trình bài hát" />
+          <SmoothRange value={player.time} max={player.duration || 1} playing={player.isPlaying} onChange={player.seek} label="Tiến trình bài hát" />
           <div className="time"><span>{formatTime(player.time)}</span><span>{formatTime(player.duration)}</span></div>
           <Controls large />
-          <div className="full-volume"><Volume2 /><input className="range" type="range" min="0" max="1" step=".01" value={player.volume} onChange={event => player.setVolume(+event.target.value)} aria-label="Âm lượng" /></div>
+          <div className="full-volume"><Volume2 /><SmoothRange value={player.volume} max={1} step={.01} onChange={player.setVolume} label="Âm lượng" /></div>
         </motion.section>
 
         <VibePanel />

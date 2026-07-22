@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Flame, Headphones, Radio, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { Flame, Headphones, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { usePlayer } from './context/PlayerContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -24,6 +24,7 @@ const genres = ['Tất cả', 'Electronic', 'Indie Pop', 'R&B', 'Ambient'];
 
 export default function App() {
   const [view, setView] = useState('home');
+  const [discoverMode, setDiscoverMode] = useState<'trending' | 'lofi'>('trending');
   const [query, setQuery] = useState('');
   const [genre, setGenre] = useState('Tất cả');
   const [menu, setMenu] = useState(false);
@@ -37,10 +38,14 @@ export default function App() {
   const greeting = hour >= 5 && hour < 12 ? 'CHÀO BUỔI SÁNG' : hour >= 12 && hour < 18 ? 'CHÀO BUỔI CHIỀU' : 'CHÀO BUỔI TỐI';
   const greetingName = (account?.name || account?.username || 'BẠN').toLocaleUpperCase('vi-VN');
   const handleUserChange = useCallback((user: UserProfile | null) => { setAccount(user); if (!isAdminUsername(user?.username)) setView(current => current === 'admin' || current === 'recommendations' ? 'home' : current); }, []);
-  const filtered = useMemo(() => catalog.filter(song => (genre === 'Tất cả' || song.genre === genre) && `${song.title} ${song.artist} ${song.album}`.toLowerCase().includes(query.toLowerCase())), [catalog, query, genre]);
+  const filtered = useMemo(() => catalog.filter(song => song.featured !== false && (genre === 'Tất cả' || song.genre === genre) && `${song.title} ${song.artist} ${song.album}`.toLowerCase().includes(query.toLowerCase())), [catalog, query, genre]);
   const homeCatalog = useMemo(() => catalog.filter(song => song.featured !== false).sort((a, b) => (a.home_order ?? Number.MAX_SAFE_INTEGER) - (b.home_order ?? Number.MAX_SAFE_INTEGER)), [catalog]);
   const recent = player.recent.map(id => catalog.find(song => song.id === id)).filter(Boolean) as Song[];
   const showToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2200); };
+  const openHomeCollection = (nextGenre: string, message: string) => {
+    setView('home'); setQuery(''); setGenre(nextGenre); showToast(message);
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => document.querySelector('.content-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  };
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(timer);
@@ -103,14 +108,14 @@ export default function App() {
     {menu && <button className="scrim" aria-label="Đóng menu" onPointerDown={() => setMenu(false)} onClick={() => setMenu(false)} />}
     <div className="workspace workspace-wide"><main className="main main-wide">
       <Header query={query} setQuery={setQuery} onMenu={() => setMenu(true)} onUserChange={handleUserChange} />
-      <AnimatePresence mode="wait">
-        {view === 'discover' ? <YouTubeDiscover key="discover" onBack={() => setView('home')} /> : view === 'admin' ? <AdminStudio key="admin" /> : view === 'recommendations' ? <AdminRecommendations key="recommendations" /> : view === 'select' ? <LarmxSelect key="select" /> : view === 'library' ? <LibraryPage key="library" /> : view === 'favorites' ? <Favorites key="favorites" /> : view === 'albums' || view === 'artists' || view === 'playlists' ? <CollectionPage key={view} view={view} /> :
+      <AnimatePresence mode="sync" initial={false}>
+        {view === 'discover' ? <YouTubeDiscover key={`discover-${discoverMode}`} initialMode={discoverMode} onBack={() => setView('home')} /> : view === 'admin' ? <AdminStudio key="admin" /> : view === 'recommendations' ? <AdminRecommendations key="recommendations" /> : view === 'select' ? <LarmxSelect key="select" /> : view === 'library' ? <LibraryPage key="library" /> : view === 'favorites' ? <Favorites key="favorites" /> : view === 'albums' || view === 'artists' || view === 'playlists' ? <CollectionPage key={view} view={view} /> :
         <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, x: -18 }}>
-          <div className="welcome welcome-upgraded"><div><p>{greeting}, {greetingName}</p><h1>Âm nhạc dành riêng<br />cho <i>khoảnh khắc này.</i></h1></div><div className="filters"><SlidersHorizontal />{genres.map(item => <button className={genre === item ? 'active' : ''} onClick={() => setGenre(item)} key={item}>{item}</button>)}</div></div>
-          {!query && <HeroBanner song={homeCatalog[0]} />}
-          {!query && <section className="quick-strip"><button className="quick-item glass"><span className="quick-icon violet"><Sparkles /></span><span><b>Made for You</b><small>Tuyển chọn mỗi ngày</small></span></button><button className="quick-item glass"><span className="quick-icon pink"><Flame /></span><span><b>Top 50 Việt Nam</b><small>Những ca khúc dẫn đầu</small></span></button><button className="quick-item glass"><span className="quick-icon cyan"><Radio /></span><span><b>LARMX Radio</b><small>Phát theo gu của bạn</small></span></button><button className="quick-item glass"><span className="quick-icon blue"><Headphones /></span><span><b>Chill Station</b><small>Không gian thật dịu</small></span></button></section>}
-          <SongSection title={query ? `Kết quả cho “${query}”` : 'Đề xuất cho bạn'} items={filtered} onToast={showToast} />
-          {!query && <><AlbumSection items={homeCatalog} /><SongSection title="Mới cập nhật" items={homeCatalog.slice(0, 12)} onToast={showToast} /><ArtistSection />{recent.length > 0 && <SongSection title="Gần đây đã nghe" items={recent} onToast={showToast} />}</>}
+          <div className="welcome welcome-upgraded"><div><p>{greeting}, {greetingName}</p><h1>Bảng Xếp Hạng Âm Nhạc<br />cho <i>Việt Nam</i></h1></div><div className="filters"><SlidersHorizontal />{genres.map(item => <button className={genre === item ? 'active' : ''} onClick={event => { setGenre(item); event.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }} key={item}>{item}</button>)}</div></div>
+          {!query && <HeroBanner song={homeCatalog[0]} queue={homeCatalog} />}
+          {!query && <section className="quick-strip" aria-label="Lối tắt âm nhạc"><button type="button" className="quick-item glass" onClick={() => openHomeCollection('Tất cả', 'Đã mở tuyển chọn dành cho bạn')}><span className="quick-icon violet"><Sparkles /></span><span><b>Made for You</b><small>Tuyển chọn mỗi ngày</small></span></button><button type="button" className="quick-item glass" onClick={() => { setQuery(''); setDiscoverMode('trending'); setView('discover'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><span className="quick-icon pink"><Flame /></span><span><b>Top 50 Việt Nam</b><small>Những ca khúc dẫn đầu</small></span></button><button type="button" className="quick-item glass" onClick={() => { setQuery(''); setDiscoverMode('lofi'); setView('discover'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><span className="quick-icon blue"><Headphones /></span><span><b>Chill Station</b><small>Lofi để học</small></span></button></section>}
+          <SongSection key={`songs-${genre}-${query}`} title={query ? `Kết quả cho “${query}”` : 'Đề xuất cho bạn'} items={filtered} onToast={showToast} />
+          {!query && <><AlbumSection items={homeCatalog} /><SongSection title="Mới cập nhật" items={homeCatalog.slice(0, 12)} onToast={showToast} /><ArtistSection items={homeCatalog} />{recent.length > 0 && <SongSection key={`recent-${player.recent.join('-')}`} title="Gần đây đã nghe" items={recent} onToast={showToast} />}</>}
         </motion.div>}
       </AnimatePresence>
     </main></div>

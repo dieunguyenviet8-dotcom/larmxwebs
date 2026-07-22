@@ -6,6 +6,7 @@ import { CURATED_EVENT, fetchCuratedSongs, getCuratedSongs } from '../services/c
 interface PlayerState { current: Song; isPlaying: boolean; time: number; duration: number; volume: number; muted: boolean; shuffle: boolean; repeat: boolean; favorites: string[]; recent: string[]; play: (song?: Song, queue?: Song[]) => void; pause: () => void; next: () => void; previous: () => void; seek: (time: number) => void; setVolume: (volume: number) => void; toggleMute: () => void; toggleShuffle: () => void; toggleRepeat: () => void; toggleFavorite: (id: string) => boolean }
 const PlayerContext = createContext<PlayerState | null>(null);
 const emptySong: Song = { id: 'larmx-empty', title: 'Chưa có bài hát', artist: 'Hãy thêm nhạc trong Studio Admin', album: 'LARMX Music', genre: '', duration: 0, cover: '/assets/liquid-soul.webp', audio: '', accent: '#8b5cf6' };
+const recordPlay = (id: string) => { if (!id || id === emptySong.id) return; try { const counts = JSON.parse(localStorage.getItem('larmx-play-counts') || '{}') as Record<string, number>; counts[id] = (counts[id] || 0) + 1; localStorage.setItem('larmx-play-counts', JSON.stringify(counts)); } catch { /* Storage may be unavailable in private mode. */ } };
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [catalog, setCatalog] = useState<Song[]>(getCuratedSongs);
@@ -16,6 +17,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [volumeState, setVolumeState] = useState(() => Number(localStorage.getItem('larmx-volume') ?? .72)); const [muted, setMuted] = useState(false); const [shuffle, setShuffle] = useState(false); const [repeat, setRepeat] = useState(false);
   const [favorites, setFavorites] = useState<string[]>(() => JSON.parse(localStorage.getItem('larmx-favorites') || '[]')); const [recent, setRecent] = useState<string[]>(() => JSON.parse(localStorage.getItem('larmx-recent') || '[]'));
   const audioRef = useRef<HTMLAudioElement | null>(null); if (!audioRef.current) audioRef.current = new Audio(current.audio); const audio = audioRef.current;
+  const playedQueueRef = useRef<Set<string>>(new Set(current.id === emptySong.id ? [] : [current.id]));
+  const remember = useCallback((id: string) => {
+    if (!id || id === emptySong.id) return;
+    setRecent(items => {
+      const next = [id, ...items.filter(item => item !== id)].slice(0, 6);
+      if (next.length === items.length && next.every((item, index) => item === items[index])) return items;
+      localStorage.setItem('larmx-recent', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const sync = () => { const next = getCuratedSongs(); setCatalog(next); setQueue(active => active.length ? active : next); };
@@ -24,28 +35,48 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => { window.removeEventListener(CURATED_EVENT, sync); window.removeEventListener('storage', sync); };
   }, [last]);
 
-  const go = useCallback((direction: number) => {
+  const go = useCallback((direction: number, wrap = true) => {
     const activeQueue = queue.length ? queue : catalog; if (!activeQueue.length) return;
     const index = activeQueue.findIndex(song => song.id === current.id);
-    const nextIndex = shuffle ? Math.floor(Math.random() * activeQueue.length) : ((index < 0 ? 0 : index) + direction + activeQueue.length) % activeQueue.length;
-    setCurrent(activeQueue[nextIndex]); setPlaying(true);
-  }, [catalog, current.id, queue, shuffle]);
+    const atEnd = direction > 0 && index === activeQueue.length - 1;
+    const atStart = direction < 0 && index === 0;
+    if (!shuffle && !wrap && (atEnd || atStart)) { audio.pause(); setPlaying(false); return false; }
+    let nextSong: Song;
+    if (shuffle && direction > 0) {
+      playedQueueRef.current.add(current.id);
+      const remaining = activeQueue.filter(song => !playedQueueRef.current.has(song.id));
+      if (!remaining.length && !wrap) { audio.pause(); setPlaying(false); return false; }
+      const pool = remaining.length ? remaining : activeQueue;
+      nextSong = pool[Math.floor(Math.random() * pool.length)];
+    } else {
+      const nextIndex = ((index < 0 ? 0 : index) + direction + activeQueue.length) % activeQueue.length;
+      nextSong = activeQueue[nextIndex];
+    }
+    playedQueueRef.current.add(nextSong.id); setCurrent(nextSong); remember(nextSong.id); setPlaying(true); return true;
+  }, [audio, catalog, current.id, queue, shuffle, remember]);
 
   useEffect(() => {
     let active = true; let objectUrl = ''; audio.pause();
     if (!current.audio) { audio.removeAttribute('src'); setPlaying(false); return; }
     void loadAudioFile(current.audio).then(source => { if (!active) { if (source.startsWith('blob:')) URL.revokeObjectURL(source); return; } objectUrl = source.startsWith('blob:') ? source : ''; audio.src = source; audio.volume = volumeState; audio.muted = muted; if (isPlaying) audio.play().catch(() => setPlaying(false)); }).catch(() => setPlaying(false));
     localStorage.setItem('larmx-last', current.id); setTime(0); setDuration(current.duration);
-    setRecent(items => { const next = [current.id, ...items.filter(id => id !== current.id)].slice(0, 6); localStorage.setItem('larmx-recent', JSON.stringify(next)); return next; });
+    remember(current.id);
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [current, audio]);
+  }, [current, audio, remember]);
   useEffect(() => { audio.volume = volumeState; audio.muted = muted; localStorage.setItem('larmx-volume', String(volumeState)); }, [volumeState, muted, audio]);
-  useEffect(() => { const tick = () => setTime(audio.currentTime); const meta = () => setDuration(audio.duration || current.duration); const ended = () => repeat ? (audio.currentTime = 0, void audio.play()) : go(1); audio.addEventListener('timeupdate', tick); audio.addEventListener('loadedmetadata', meta); audio.addEventListener('ended', ended); return () => { audio.removeEventListener('timeupdate', tick); audio.removeEventListener('loadedmetadata', meta); audio.removeEventListener('ended', ended); }; }, [audio, current.duration, go, repeat]);
+  useEffect(() => {
+    const syncTime = () => setTime(previous => Math.abs(previous - audio.currentTime) < .015 ? previous : audio.currentTime);
+    syncTime();
+    if (!isPlaying) return;
+    const timer = window.setInterval(syncTime, 80);
+    return () => window.clearInterval(timer);
+  }, [audio, isPlaying]);
+  useEffect(() => { const meta = () => setDuration(audio.duration || current.duration); const ended = () => { if (repeat) { audio.currentTime = 0; void audio.play(); return; } if (!go(1, false)) { setTime(audio.duration || current.duration); setPlaying(false); } }; audio.addEventListener('loadedmetadata', meta); audio.addEventListener('ended', ended); return () => { audio.removeEventListener('loadedmetadata', meta); audio.removeEventListener('ended', ended); }; }, [audio, current.duration, go, repeat]);
 
-  const play = (song?: Song, nextQueue?: Song[]) => { if (nextQueue?.length) setQueue(nextQueue); else if (song && !queue.some(item => item.id === song.id)) setQueue(catalog); if (song && song.id !== current.id) { setCurrent(song); setPlaying(true); return; } if (!current.audio) return; audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false)); };
+  const play = (song?: Song, nextQueue?: Song[]) => { const target = song || current; if (nextQueue?.length) { setQueue(nextQueue); playedQueueRef.current = new Set([target.id]); } else if (song && !queue.some(item => item.id === song.id)) { setQueue(catalog); playedQueueRef.current = new Set([target.id]); } remember(target.id); if (song) recordPlay(song.id); if (song && song.id !== current.id) { setCurrent(song); setPlaying(true); return; } if (!current.audio) return; audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false)); };
   const pause = () => { audio.pause(); setPlaying(false); };
   const toggleFavorite = (id: string) => { const added = !favorites.includes(id); const next = added ? [...favorites, id] : favorites.filter(item => item !== id); setFavorites(next); localStorage.setItem('larmx-favorites', JSON.stringify(next)); return added; };
-  const value = useMemo(() => ({ current, isPlaying, time, duration, volume: volumeState, muted, shuffle, repeat, favorites, recent, play, pause, next: () => go(1), previous: () => go(-1), seek: (next: number) => { audio.currentTime = next; setTime(next); }, setVolume: setVolumeState, toggleMute: () => setMuted(value => !value), toggleShuffle: () => setShuffle(value => !value), toggleRepeat: () => setRepeat(value => !value), toggleFavorite }), [current, isPlaying, time, duration, volumeState, muted, shuffle, repeat, favorites, recent, go, queue, catalog]);
+  const value = useMemo(() => ({ current, isPlaying, time, duration, volume: volumeState, muted, shuffle, repeat, favorites, recent, play, pause, next: () => { void go(1, false); }, previous: () => { void go(-1); }, seek: (next: number) => { audio.currentTime = next; setTime(next); }, setVolume: setVolumeState, toggleMute: () => setMuted(value => !value), toggleShuffle: () => setShuffle(value => !value), toggleRepeat: () => setRepeat(value => !value), toggleFavorite }), [current, isPlaying, time, duration, volumeState, muted, shuffle, repeat, favorites, recent, go, queue, catalog]);
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }
 export const usePlayer = () => { const value = useContext(PlayerContext); if (!value) throw new Error('usePlayer requires PlayerProvider'); return value; };

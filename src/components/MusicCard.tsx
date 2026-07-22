@@ -11,10 +11,8 @@ export function MusicCard({ song, queue, onToast }: { song: Song; queue?: Song[]
   const togglePlayback = () => active ? player.pause() : player.play(song, queue);
 
   return <motion.article
-    layout
-    initial={{ opacity: 0, y: 14 }}
+    initial={false}
     animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: .32, ease: [0.22, 1, 0.36, 1] }}
     className={`music-card glass music-card-clickable ${active ? 'is-playing' : ''}`}
     role="button"
     tabIndex={-1}
@@ -28,7 +26,7 @@ export function MusicCard({ song, queue, onToast }: { song: Song; queue?: Song[]
     }}
   >
     <div className="cover">
-      <img src={song.cover} alt={`Bìa ${song.album}`} />
+      <img src={song.cover} alt={`Bìa ${song.album}`} decoding="async" />
       {active && <motion.i className="playing-glow" initial={{ opacity: 0 }} animate={{ opacity: [.2, .7, .2] }} transition={{ duration: 2.4, repeat: Infinity }} />}
       <motion.button whileTap={{ scale: .88 }} aria-label={active ? 'Tạm dừng' : 'Phát bài hát'} onClick={event => { event.stopPropagation(); togglePlayback(); }}>
         <AnimatePresence mode="wait" initial={false}>{active

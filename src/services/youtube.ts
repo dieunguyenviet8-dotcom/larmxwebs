@@ -20,7 +20,7 @@ interface SearchResponse {
 }
 
 interface VideoStatusResponse {
-  items?: Array<{ id: string; snippet?: { categoryId?: string }; status: { embeddable?: boolean; privacyStatus?: string }; contentDetails?: { regionRestriction?: { allowed?: string[]; blocked?: string[] } } }>;
+  items?: Array<{ id: string; snippet?: { categoryId?: string }; status: { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string }; contentDetails?: { regionRestriction?: { allowed?: string[]; blocked?: string[] }; contentRating?: { ytRating?: string } } }>;
   error?: { message?: string };
 }
 
@@ -33,14 +33,27 @@ interface PopularVideosResponse {
       publishedAt: string;
       thumbnails: { maxres?: { url: string }; high?: { url: string }; medium?: { url: string } };
     };
-    status: { embeddable?: boolean; privacyStatus?: string };
-    contentDetails?: { regionRestriction?: { allowed?: string[]; blocked?: string[] } };
+    status: { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string };
+    contentDetails?: { regionRestriction?: { allowed?: string[]; blocked?: string[] }; contentRating?: { ytRating?: string } };
   }>;
   error?: { message?: string };
 }
 
-const HOT_CACHE_KEY = 'larmx-youtube-hot-v2';
+const HOT_CACHE_KEY = 'larmx-youtube-hot-v3';
+const BLOCKED_VIDEO_KEY = 'larmx-youtube-unavailable';
 const todayKey = () => new Date().toLocaleDateString('en-CA');
+const getBlockedVideoIds = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(BLOCKED_VIDEO_KEY) || '[]') as string[]); }
+  catch { return new Set<string>(); }
+};
+export const markYouTubeVideoUnavailable = (videoId: string) => {
+  const blocked = getBlockedVideoIds(); blocked.add(videoId);
+  localStorage.setItem(BLOCKED_VIDEO_KEY, JSON.stringify([...blocked].slice(-200)));
+  try {
+    const cache = JSON.parse(localStorage.getItem(HOT_CACHE_KEY) || 'null') as { day?: string; videos?: YouTubeVideo[] } | null;
+    if (cache?.videos) localStorage.setItem(HOT_CACHE_KEY, JSON.stringify({ ...cache, videos: cache.videos.filter(video => video.id !== videoId) }));
+  } catch { /* Ignore a malformed cache. */ }
+};
 
 const decode = (value: string) => {
   const element = document.createElement('textarea');
@@ -55,10 +68,11 @@ export async function getDailyHotMusic(signal?: AbortSignal): Promise<YouTubeVid
   const key = import.meta.env.VITE_YOUTUBE_API_KEY as string | undefined;
   if (!key) throw new Error('MISSING_API_KEY');
 
+  const blocked = getBlockedVideoIds();
   let staleVideos: YouTubeVideo[] = [];
   try {
     const cached = JSON.parse(localStorage.getItem(HOT_CACHE_KEY) || 'null') as { day?: string; videos?: YouTubeVideo[] } | null;
-    staleVideos = cached?.videos || [];
+    staleVideos = (cached?.videos || []).filter(video => !blocked.has(video.id));
     if (cached?.day === todayKey() && cached.videos?.length) return cached.videos;
   } catch { /* Fetch a fresh chart when cache is invalid. */ }
 
@@ -79,7 +93,7 @@ export async function getDailyHotMusic(signal?: AbortSignal): Promise<YouTubeVid
     throw new Error(data.error?.message || 'Không thể tải bảng xếp hạng YouTube');
   }
 
-  const videos = (data.items || []).filter(video => video.status.embeddable && video.status.privacyStatus === 'public' && availableInVietnam(video.contentDetails?.regionRestriction)).map(video => ({
+  const videos = (data.items || []).filter(video => !blocked.has(video.id) && video.status.embeddable && video.status.privacyStatus === 'public' && video.status.uploadStatus !== 'rejected' && video.contentDetails?.contentRating?.ytRating !== 'ytAgeRestricted' && availableInVietnam(video.contentDetails?.regionRestriction)).map(video => ({
     id: video.id,
     title: decode(video.snippet.title),
     channel: decode(video.snippet.channelTitle),
@@ -100,7 +114,8 @@ export async function searchYouTube(query: string, signal?: AbortSignal): Promis
   const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`, { signal });
   const data = await response.json() as SearchResponse;
   if (!response.ok) throw new Error(data.error?.message || 'Không thể kết nối YouTube API');
-  const candidates = (data.items || []).flatMap(item => item.id.videoId ? [{
+  const blocked = getBlockedVideoIds();
+  const candidates = (data.items || []).flatMap(item => item.id.videoId && !blocked.has(item.id.videoId) ? [{
     id: item.id.videoId,
     title: decode(item.snippet.title),
     channel: decode(item.snippet.channelTitle),
@@ -119,7 +134,7 @@ export async function searchYouTube(query: string, signal?: AbortSignal): Promis
   if (!statusResponse.ok) throw new Error(statusData.error?.message || 'Không thể kiểm tra quyền phát video');
   const playable = new Set((statusData.items || []).filter(video => {
     const region = video.contentDetails?.regionRestriction;
-    return video.snippet?.categoryId === '10' && video.status.embeddable && video.status.privacyStatus === 'public' && availableInVietnam(region);
+    return !blocked.has(video.id) && video.snippet?.categoryId === '10' && video.status.embeddable && video.status.privacyStatus === 'public' && video.status.uploadStatus !== 'rejected' && video.contentDetails?.contentRating?.ytRating !== 'ytAgeRestricted' && availableInVietnam(region);
   }).map(video => video.id));
   return candidates.filter(video => playable.has(video.id));
 }

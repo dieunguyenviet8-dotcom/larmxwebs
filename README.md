@@ -28,6 +28,10 @@ npm run preview
 
 Tab **Khám phá** dùng YouTube Data API để tìm video công khai có thể nhúng và phát bằng YouTube IFrame Player chính thức. Không đưa file `.env` lên Git.
 
+## Cloudflare R2 dự phòng
+
+Studio Admin hỗ trợ chọn `Tự động / Supabase / Cloudflare R2` cho file MP3 và ảnh bìa. Xem hướng dẫn triển khai API bảo mật tại [`deploy/R2-SETUP.md`](deploy/R2-SETUP.md). Khóa R2 chỉ được đặt trong `server/.env` trên VPS, không dùng biến `VITE_`.
+
 ## Đăng nhập Google
 
 Tạo OAuth 2.0 Web Client ID trong Google Cloud Console, thêm `http://localhost:5173` và `http://127.0.0.1:5173` vào Authorized JavaScript origins, sau đó thêm `VITE_GOOGLE_CLIENT_ID` vào `.env`. Tài khoản email local chỉ dành cho demo frontend; ứng dụng production cần backend để xác thực và quản lý phiên an toàn.

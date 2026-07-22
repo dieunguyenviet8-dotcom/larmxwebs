@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:storage": "node server/r2-server.mjs",
+    "start:storage": "node server/r2-server.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint ."
